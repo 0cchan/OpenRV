@@ -52,7 +52,6 @@ runs:
       with:
         msystem: MINGW64
         update: true
-        # False because it keep creating new cache entry.
         cache: false
         install: >-
           mingw-w64-x86_64-autotools
@@ -76,7 +75,7 @@ runs:
           zip
 
     - name: Activate Python ${{ inputs.python-version }}
-      uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # 5.2.0
+      uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3
       with:
         python-version: '${{ inputs.python-version }}'
 
@@ -158,10 +157,6 @@ runs:
       shell: msys2 {0}
 
     - name: Setup sccache
-      # Used for this run only (SCCACHE_GHA_ENABLED=false); not stored in Actions cache.
-      # For sccache to actually cache the Windows/MSVC build, CMake must use it as the compiler
-      # launcher, e.g. -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-      # in the Configure OpenRV step (and sccache must be on PATH when the build runs).
       uses: mozilla-actions/sccache-action@v0.0.6
       with:
         version: "v0.8.1"
@@ -198,3 +193,13 @@ runs:
     - name: Install OpenRV
       run: cmake --install _build --prefix $(pwd)/_install --config ${{ inputs.build-type }}
       shell: msys2 {0}
+
+    - name: Upload OpenRV portable build
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenRV-4.0.2-Windows-CY2025-Release
+        path: |
+          _build/stage/app/bin
+          _install
+        if-no-files-found: error
+        compression-level: 0
