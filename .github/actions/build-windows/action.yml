@@ -25,20 +25,49 @@ inputs:
 
 runs:
   using: "composite"
+
   steps:
     - name: Install MSVC components ${{ inputs.msvc-component }}
       run: |
         Set-Location "C:\Program Files (x86)\Microsoft Visual Studio\Installer\"
+
         $InstallPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-        $componentsToRemove= @(
+
+        $componentsToRemove = @(
           "Microsoft.VisualStudio.Component.VC.${{ inputs.msvc-component }}"
           "Microsoft.VisualStudio.Component.VC.${{ inputs.msvc-component }}.Spectre"
         )
-        [string]$workloadArgs = $componentsToRemove | ForEach-Object {" --add " +  $_}
-        $Arguments = ('/c', "vs_installer.exe", 'modify', '--installPath', "`"$InstallPath`"",$workloadArgs, '--quiet', '--norestart', '--nocache')
-        # should be run twice
-        $process = Start-Process -FilePath cmd.exe -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
-        $process = Start-Process -FilePath cmd.exe -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+
+        [string]$workloadArgs = $componentsToRemove | ForEach-Object {
+          " --add " + $_
+        }
+
+        $Arguments = (
+          '/c',
+          "vs_installer.exe",
+          'modify',
+          '--installPath',
+          "`"$InstallPath`"",
+          $workloadArgs,
+          '--quiet',
+          '--norestart',
+          '--nocache'
+        )
+
+        # OpenRV's existing Windows workflow runs this twice.
+        $process = Start-Process `
+          -FilePath cmd.exe `
+          -ArgumentList $Arguments `
+          -Wait `
+          -PassThru `
+          -WindowStyle Hidden
+
+        $process = Start-Process `
+          -FilePath cmd.exe `
+          -ArgumentList $Arguments `
+          -Wait `
+          -PassThru `
+          -WindowStyle Hidden
       shell: powershell
 
     - name: Set up MSVC ${{ inputs.msvc-compiler }}
@@ -167,20 +196,40 @@ runs:
         sccache --version || echo "WARNING: sccache not found in PATH"
       shell: msys2 {0}
 
-    - name: Configure OpenRV
+    - name: Configure OpenRV with additional FFmpeg codecs
       run: |
         cmake --version
+
         export QT_HOME=c:/Qt/${{ inputs.qt-version }}/msvc2019_64
-        cmake -B _build -G "Visual Studio 17 2022" -A x64 -DRV_DEPS_WIN_PERL_ROOT=c:/Strawberry/perl/bin -DCMAKE_BUILD_TYPE=${{ inputs.build-type }} -DRV_DEPS_QT_LOCATION=$QT_HOME -DRV_VFX_PLATFORM=${{ inputs.vfx-platform }}
+
+        cmake -B _build \
+          -G "Visual Studio 17 2022" \
+          -A x64 \
+          -DRV_DEPS_WIN_PERL_ROOT=c:/Strawberry/perl/bin \
+          -DCMAKE_BUILD_TYPE=${{ inputs.build-type }} \
+          -DRV_DEPS_QT_LOCATION=$QT_HOME \
+          -DRV_VFX_PLATFORM=${{ inputs.vfx-platform }} \
+          -DRV_FFMPEG_NON_FREE_DECODERS_TO_ENABLE="aac;aac_fixed;aac_latm;bink;binkaudio_dct;binkaudio_rdft;dnxhd;dvvideo;hevc;mpeg2video;qtrle;svq1;svq3;vp9" \
+          -DRV_FFMPEG_NON_FREE_ENCODERS_TO_ENABLE="aac;dnxhd;dvvideo;qtrle"
       shell: msys2 {0}
 
     - name: Build OpenRV dependencies
-      run: cmake --build _build --config ${{ inputs.build-type }} --target dependencies --parallel=$(python -c 'import os; print(os.cpu_count())') -v
+      run: |
+        cmake --build _build \
+          --config ${{ inputs.build-type }} \
+          --target dependencies \
+          --parallel=$(python -c 'import os; print(os.cpu_count())') \
+          -v
       shell: msys2 {0}
       id: build_deps
 
     - name: Build OpenRV main executable
-      run: cmake --build _build --config ${{ inputs.build-type }} --target main_executable --parallel=$(python -c 'import os; print(os.cpu_count())') -v
+      run: |
+        cmake --build _build \
+          --config ${{ inputs.build-type }} \
+          --target main_executable \
+          --parallel=$(python -c 'import os; print(os.cpu_count())') \
+          -v
       shell: msys2 {0}
 
     - name: Tests
@@ -191,15 +240,16 @@ runs:
       shell: msys2 {0}
 
     - name: Install OpenRV
-      run: cmake --install _build --prefix $(pwd)/_install --config ${{ inputs.build-type }}
+      run: |
+        cmake --install _build \
+          --prefix $(pwd)/_install \
+          --config ${{ inputs.build-type }}
       shell: msys2 {0}
 
     - name: Upload OpenRV portable build
       uses: actions/upload-artifact@v4
       with:
-        name: OpenRV-4.0.2-Windows-CY2025-Release
-        path: |
-          _build/stage/app/bin
-          _install
+        name: OpenRV-4.0.2-Windows-CY2025-Release-Codecs
+        path: _install
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 9
